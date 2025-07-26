@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Search, Play, Eye, ListPlus, XCircle, SkipForward, SkipBack } from "lucide-react"
+import { Search, Play, Eye, ListPlus, XCircle, SkipForward, SkipBack, RefreshCw } from "lucide-react" // Importar RefreshCw
 
 interface Video {
   id: string
@@ -26,8 +26,6 @@ export default function VideoPage() {
   const [suggestions, setSuggestions] = useState<Video[]>([])
   const [playlist, setPlaylist] = useState<Video[]>([])
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1) // -1 means no playlist item is currently playing
-  const [urlInput, setUrlInput] = useState("")
-  const [listenerName, setListenerName] = useState("")
 
   const searchVideos = async () => {
     if (!searchQuery.trim()) return
@@ -157,32 +155,6 @@ export default function VideoPage() {
     return `${num} views`
   }
 
-  const handleUrlSubmit = async () => {
-    if (!urlInput.trim()) return
-
-    try {
-      const response = await fetch("/api/suggestions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ url: urlInput, listenerName }),
-      })
-      const data = await response.json()
-      if (data.success) {
-        setUrlInput("")
-        setListenerName("")
-        loadSuggestions() // <--- Añade esta línea para recargar las sugerencias
-        alert("¡Gracias por tu sugerencia!")
-      } else {
-        alert(`Error: ${data.error || "No se pudo enviar la sugerencia."}`)
-      }
-    } catch (error) {
-      console.error("Error sending suggestion:", error)
-      alert("Ocurrió un error al enviar la sugerencia.")
-    }
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
       <div className="container mx-auto px-4 py-8">
@@ -216,9 +188,15 @@ export default function VideoPage() {
 
         {/* Listener Suggestions Section */}
         <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
-          <CardHeader>
-            <CardTitle className="text-white">Sugerencias de Oyentes</CardTitle>
-            <CardDescription className="text-gray-300">Videos sugeridos por la audiencia</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-white">Sugerencias de Oyentes</CardTitle>
+              <CardDescription className="text-gray-300">Videos sugeridos por la audiencia</CardDescription>
+            </div>
+            <Button variant="ghost" size="icon" onClick={loadSuggestions} className="text-white hover:bg-white/20">
+              <RefreshCw className="w-5 h-5" />
+              <span className="sr-only">Actualizar sugerencias</span>
+            </Button>
           </CardHeader>
           <CardContent>
             {suggestions.length === 0 ? (
@@ -271,35 +249,6 @@ export default function VideoPage() {
                 ))}
               </div>
             )}
-          </CardContent>
-        </Card>
-
-        {/* Suggest a video Section */}
-        <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
-          <CardHeader>
-            <CardTitle className="text-white">Sugerir un video</CardTitle>
-            <CardDescription className="text-gray-300">
-              Comparte la URL de un video y tu nombre para sugerirlo a la radio.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-4">
-              <Input
-                placeholder="URL del video"
-                value={urlInput}
-                onChange={(e) => setUrlInput(e.target.value)}
-                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
-              />
-              <Input
-                placeholder="Tu nombre (opcional)"
-                value={listenerName}
-                onChange={(e) => setListenerName(e.target.value)}
-                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
-              />
-              <Button onClick={handleUrlSubmit} className="bg-green-600 hover:bg-green-700">
-                Sugerir video
-              </Button>
-            </div>
           </CardContent>
         </Card>
 
