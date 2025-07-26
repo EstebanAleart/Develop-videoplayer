@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "URL is required" }, { status: 400 })
     }
 
-    const videoId = extractVideoId(url)
+    const videoId = url
 
     if (!videoId) {
       return NextResponse.json({ error: "Invalid YouTube URL" }, { status: 400 })
