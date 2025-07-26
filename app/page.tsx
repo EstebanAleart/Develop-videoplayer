@@ -26,6 +26,8 @@ export default function VideoPage() {
   const [suggestions, setSuggestions] = useState<Video[]>([])
   const [playlist, setPlaylist] = useState<Video[]>([])
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1) // -1 means no playlist item is currently playing
+  const [urlInput, setUrlInput] = useState("")
+  const [listenerName, setListenerName] = useState("")
 
   const searchVideos = async () => {
     if (!searchQuery.trim()) return
@@ -155,6 +157,32 @@ export default function VideoPage() {
     return `${num} views`
   }
 
+  const handleUrlSubmit = async () => {
+    if (!urlInput.trim()) return
+
+    try {
+      const response = await fetch("/api/suggestions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ url: urlInput, listenerName }),
+      })
+      const data = await response.json()
+      if (data.success) {
+        setUrlInput("")
+        setListenerName("")
+        loadSuggestions() // <--- Añade esta línea para recargar las sugerencias
+        alert("¡Gracias por tu sugerencia!")
+      } else {
+        alert(`Error: ${data.error || "No se pudo enviar la sugerencia."}`)
+      }
+    } catch (error) {
+      console.error("Error sending suggestion:", error)
+      alert("Ocurrió un error al enviar la sugerencia.")
+    }
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
       <div className="container mx-auto px-4 py-8">
@@ -243,6 +271,35 @@ export default function VideoPage() {
                 ))}
               </div>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Suggest a video Section */}
+        <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
+          <CardHeader>
+            <CardTitle className="text-white">Sugerir un video</CardTitle>
+            <CardDescription className="text-gray-300">
+              Comparte la URL de un video y tu nombre para sugerirlo a la radio.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4">
+              <Input
+                placeholder="URL del video"
+                value={urlInput}
+                onChange={(e) => setUrlInput(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+              />
+              <Input
+                placeholder="Tu nombre (opcional)"
+                value={listenerName}
+                onChange={(e) => setListenerName(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
+              />
+              <Button onClick={handleUrlSubmit} className="bg-green-600 hover:bg-green-700">
+                Sugerir video
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
