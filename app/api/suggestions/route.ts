@@ -21,6 +21,18 @@ function extractVideoId(url: string): string | null {
   return null
 }
 
+
+export function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+    },
+  });
+}
+
 // GET - Obtener todas las sugerencias
 export async function GET() {
   return NextResponse.json({ suggestions })
@@ -84,10 +96,22 @@ export async function POST(request: NextRequest) {
       suggestions = suggestions.slice(0, 50)
     }
 
-    return NextResponse.json({ success: true, video })
+    return NextResponse.json({ success: true, video }, {
+      headers: {
+        "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    })
   } catch (error) {
     console.error("Error processing suggestion:", error)
-    return NextResponse.json({ error: "Failed to process suggestion" }, { status: 500 })
+    return NextResponse.json({ error: "Failed to process suggestion" }, { status: 500,
+      headers: {
+        "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
+        "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      },
+    })
   }
 }
 
