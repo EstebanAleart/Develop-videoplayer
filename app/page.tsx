@@ -1,10 +1,12 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Search, Play, Eye, ListPlus, XCircle, SkipForward, SkipBack, RefreshCw } from "lucide-react" // Importar RefreshCw
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Search, Play, ListPlus, XCircle, SkipForward, SkipBack, Eye, RefreshCw } from "lucide-react"
+import dynamic from 'next/dynamic'
+import { useCallback } from "react"
 
 interface Video {
   id: string
@@ -23,9 +25,30 @@ export default function VideoPage() {
   const [videos, setVideos] = useState<Video[]>([])
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null)
   const [loading, setLoading] = useState(false)
-  const [suggestions, setSuggestions] = useState<Video[]>([])
   const [playlist, setPlaylist] = useState<Video[]>([])
+  const [suggestions, setSuggestions] = useState<Video[]>([]) // Mantener para compatibilidad
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1) // -1 means no playlist item is currently playing
+  const [autoPlayTimer, setAutoPlayTimer] = useState<NodeJS.Timeout | null>(null)
+
+  // Function to play the next video in the playlist
+  const playNextVideo = useCallback(() => {
+    if (playlist.length === 0) return null;
+    
+    let nextIndex = currentPlaylistIndex + 1;
+    
+    // If we've reached the end of the playlist, loop back to the start
+    if (nextIndex >= playlist.length) {
+      nextIndex = 0;
+    }
+    
+    const nextVideo = playlist[nextIndex];
+    if (nextVideo) {
+      setCurrentVideo(nextVideo);
+      setCurrentPlaylistIndex(nextIndex);
+      return nextVideo;
+    }
+    return null;
+  }, [currentPlaylistIndex, playlist]);
 
   const searchVideos = async () => {
     if (!searchQuery.trim()) return
@@ -52,30 +75,76 @@ export default function VideoPage() {
     }
   }
 
-  useEffect(() => {
-    loadSuggestions()
-  }, [])
+  // Función para cargar sugerencias
+  // Importar dinámicamente el componente de sugerencias para deshabilitar el SSR
+  const SuggestionsList = dynamic<{}>(
+    () => import('./components/suggestions-list').then(mod => mod.SuggestionsList),
+    {
+      ssr: false,
+      loading: () => <div className="text-center py-4">Cargando sugerencias...</div>
+    }
+  )
 
-  // Auto-play logic: prioritize playlist, then suggestions
+  // Auto-play logic: prioritize playlist
   useEffect(() => {
-    if (!currentVideo) {
-      // Only auto-play if no video is currently set
-      if (playlist.length > 0) {
-        setCurrentVideo(playlist[0])
-        setCurrentPlaylistIndex(0)
-      } else if (suggestions.length > 0) {
-        setCurrentVideo(suggestions[0])
-        setCurrentPlaylistIndex(-1) // Not from playlist
+    if (!currentVideo && playlist.length > 0) {
+      setCurrentVideo(playlist[0])
+      setCurrentPlaylistIndex(0)
+    }
+  }, [currentVideo, playlist])
+
+  // Set up auto-play timer when currentVideo changes
+  useEffect(() => {
+    if (!currentVideo?.duration) return;
+    
+    // Parse duration in ISO 8601 format (e.g., 'PT1H2M3S')
+    const parseDuration = (duration: string): number => {
+      const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
+      if (!match) return 0;
+      
+      const hours = parseInt(match[1]) || 0;
+      const minutes = parseInt(match[2]) || 0;
+      const seconds = parseInt(match[3]) || 0;
+      
+      return (hours * 3600 + minutes * 60 + seconds) * 1000; // Convert to milliseconds
+    };
+    
+    // Only set timer if we're playing from a playlist
+    if (currentPlaylistIndex !== -1 && playlist.length > 0) {
+      const durationMs = parseDuration(currentVideo.duration);
+      
+      if (durationMs > 0) {
+        // Set a timeout to play the next video when the current one ends
+        const timer = setTimeout(() => {
+          playNextVideo();
+        }, durationMs);
+        
+        setAutoPlayTimer(timer);
       }
     }
-  }, [currentVideo, playlist, suggestions]) // Dependencias: currentVideo, playlist, suggestions
+    
+    // Clean up timer on unmount or when video changes
+    return () => {
+      if (autoPlayTimer) {
+        clearTimeout(autoPlayTimer);
+      }
+    };
+  }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo]);
+  
+  // Play video function
 
   const playVideo = (video: Video, isFromPlaylist = false, index = -1) => {
-    setCurrentVideo(video)
+    // Clear any existing auto-play timer
+    if (autoPlayTimer) {
+      clearTimeout(autoPlayTimer);
+      setAutoPlayTimer(null);
+    }
+    
+    setCurrentVideo(video);
     if (isFromPlaylist) {
-      setCurrentPlaylistIndex(index)
+      setCurrentPlaylistIndex(index);
     } else {
-      setCurrentPlaylistIndex(-1) // Not playing from playlist
+      setCurrentPlaylistIndex(-1); // Not playing from playlist
     }
   }
 
