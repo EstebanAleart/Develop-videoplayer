@@ -26,7 +26,7 @@ export function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: {
-      "Access-Control-Allow-Origin": "https://radioweb.manudev.ovh",
+      "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
       "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
