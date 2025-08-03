@@ -26,7 +26,7 @@ export function OPTIONS() {
   return new Response(null, {
     status: 204,
     headers: {
-      "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
+      "Access-Control-Allow-Origin": "https://radioweb.manudev.ovh",
       "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     },
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, video }, {
       headers: {
-        "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
+        "Access-Control-Allow-Origin": "https://radioweb.manudev.ovh",
         "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       },
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
     console.error("Error processing suggestion:", error)
     return NextResponse.json({ error: "Failed to process suggestion" }, { status: 500,
       headers: {
-        "Access-Control-Allow-Origin": "http://radioweb.manudev.ovh",
+        "Access-Control-Allow-Origin": "https://radioweb.manudev.ovh",
         "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type",
       },
