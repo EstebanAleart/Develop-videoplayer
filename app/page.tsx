@@ -370,7 +370,7 @@ export default function VideoPage() {
                 {playlist.length === 0 ? (
                   <p className="text-gray-400">La playlist está vacía. Agrega videos de la búsqueda o sugerencias.</p>
                 ) : (
-                  <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent space-y-3">
+                  <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-purple-600 hover:scrollbar-thumb-purple-500 space-y-3">
                     {playlist.map((video, index) => (
                       <Card
                         key={video.id}
@@ -477,7 +477,7 @@ export default function VideoPage() {
               <p className="text-gray-400">No hay videos para mostrar. Realiza una búsqueda.</p>
             ) : (
               <>
-                <div className="max-h-[800px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+                <div className="max-h-[800px] overflow-y-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-blue-600 hover:scrollbar-thumb-blue-500">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {videos.map((video) => (
                       <Card
