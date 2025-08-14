@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight, RefreshCw, ListPlus } from "lucide-react"
+import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useCallback } from "react"
 
@@ -29,7 +29,7 @@ export default function VideoPage() {
   const [suggestions, setSuggestions] = useState<Video[]>([])
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1)
   const [autoPlayTimer, setAutoPlayTimer] = useState<NodeJS.Timeout | null>(null)
-  const [autoPlayEnabled, setAutoPlayEnabled] = useState(false)
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true) // cambiado de false a true para que inicie activado
 
   const [currentPage, setCurrentPage] = useState(1)
   const [totalResults, setTotalResults] = useState(0)
@@ -37,6 +37,29 @@ export default function VideoPage() {
   const [prevPageToken, setPrevPageToken] = useState<string | null>(null)
   const [pageTokens, setPageTokens] = useState<{ [key: number]: string }>({})
   const resultsPerPage = 10
+
+  const isMobile = () => {
+    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+  }
+
+  const getYouTubeEmbedUrl = (videoId: string, autoplay: boolean) => {
+    const baseUrl = `https://www.youtube.com/embed/${videoId}`
+    const params = new URLSearchParams({
+      playsinline: "1", // Reproduce en línea en iOS
+      rel: "0", // No muestra videos relacionados
+      modestbranding: "1", // Reduce el branding de YouTube
+      origin: window.location.origin, // Especifica el origen para evitar redirecciones
+      enablejsapi: "1", // Habilita la API de JavaScript
+      fs: "1", // Permite pantalla completa
+      iv_load_policy: "3", // Oculta anotaciones
+    })
+
+    if (autoplay) {
+      params.append("autoplay", "1")
+    }
+
+    return `${baseUrl}?${params.toString()}`
+  }
 
   const playNextVideo = useCallback(() => {
     if (playlist.length === 0) return null
@@ -134,7 +157,7 @@ export default function VideoPage() {
   }, [currentVideo, playlist])
 
   useEffect(() => {
-    if (!currentVideo?.duration) return
+    if (!currentVideo?.duration || !autoPlayEnabled) return
 
     const parseDuration = (duration: string): number => {
       const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
@@ -164,7 +187,7 @@ export default function VideoPage() {
         clearTimeout(autoPlayTimer)
       }
     }
-  }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo])
+  }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo, autoPlayEnabled])
 
   const playVideo = (video: Video, isFromPlaylist = false, index = -1) => {
     if (autoPlayTimer) {
@@ -286,72 +309,6 @@ export default function VideoPage() {
           </CardContent>
         </Card>
 
-         {/* Listener Suggestions Section */}
-        {/* <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div>
-              <CardTitle className="text-white">Sugerencias de Oyentes</CardTitle>
-              <CardDescription className="text-gray-300">Videos sugeridos por la audiencia</CardDescription>
-            </div>
-            <Button variant="ghost" size="icon" onClick={loadSuggestions} className="text-white hover:bg-white/20">
-              <RefreshCw className="w-5 h-5" />
-              <span className="sr-only">Actualizar sugerencias</span>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {suggestions.length === 0 ? (
-              <p className="text-gray-400">No hay sugerencias aún.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {suggestions.map((video) => (
-                  <Card
-                    key={video.id}
-                    className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
-                  >
-                    <CardContent className="p-3">
-                      <div className="relative mb-2">
-                        <img
-                          src={video.thumbnail || "/placeholder.svg"}
-                          alt={video.title}
-                          className="w-full h-24 object-cover rounded"
-                        />
-                        {video.duration && (
-                          <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
-                            {formatDuration(video.duration)}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
-                      <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
-                      {video.suggestedBy && (
-                        <p className="text-green-400 text-xs mb-1">Sugerido por: {video.suggestedBy}</p>
-                      )}
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          {video.viewCount && (
-                            <span className="flex items-center gap-1">
-                              <Eye className="w-3 h-3" />
-                              {formatViewCount(video.viewCount)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
-                            <Play className="w-4 h-4 text-blue-400" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
-                            <ListPlus className="w-4 h-4 text-purple-400" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card> */}
-
         <div className="grid lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2">
             <Card className="bg-white/10 backdrop-blur-sm border-white/20">
@@ -359,7 +316,7 @@ export default function VideoPage() {
                 {currentVideo ? (
                   <div className="aspect-video">
                     <iframe
-                      src={`https://www.youtube.com/embed/${currentVideo.id}${autoPlayEnabled ? "?autoplay=1" : ""}`}
+                      src={getYouTubeEmbedUrl(currentVideo.id, autoPlayEnabled)}
                       title={currentVideo.title}
                       className="w-full h-full rounded-t-lg"
                       allowFullScreen
@@ -436,7 +393,7 @@ export default function VideoPage() {
                 {playlist.length === 0 ? (
                   <p className="text-gray-400">La playlist está vacía. Agrega videos de la búsqueda o sugerencias.</p>
                 ) : (
-                  <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-purple-600 hover:scrollbar-thumb-purple-500 space-y-3">
+                  <div className="max-h-[600px] overflow-y-auto scrollbar-hide space-y-3">
                     {playlist.map((video, index) => (
                       <Card
                         key={video.id}
@@ -543,7 +500,7 @@ export default function VideoPage() {
               <p className="text-gray-400">No hay videos para mostrar. Realiza una búsqueda.</p>
             ) : (
               <>
-                <div className="max-h-[800px] overflow-y-auto scrollbar-thin scrollbar-track-gray-800 scrollbar-thumb-blue-600 hover:scrollbar-thumb-blue-500">
+                <div className="max-h-[800px] overflow-y-auto scrollbar-hide">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                     {videos.map((video) => (
                       <Card
