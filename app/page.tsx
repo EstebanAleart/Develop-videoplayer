@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight, RefreshCw, ListPlus } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useCallback } from "react"
 
@@ -285,6 +285,72 @@ export default function VideoPage() {
             </div>
           </CardContent>
         </Card>
+
+         {/* Listener Suggestions Section */}
+        {/* <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-white">Sugerencias de Oyentes</CardTitle>
+              <CardDescription className="text-gray-300">Videos sugeridos por la audiencia</CardDescription>
+            </div>
+            <Button variant="ghost" size="icon" onClick={loadSuggestions} className="text-white hover:bg-white/20">
+              <RefreshCw className="w-5 h-5" />
+              <span className="sr-only">Actualizar sugerencias</span>
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {suggestions.length === 0 ? (
+              <p className="text-gray-400">No hay sugerencias aún.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {suggestions.map((video) => (
+                  <Card
+                    key={video.id}
+                    className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                  >
+                    <CardContent className="p-3">
+                      <div className="relative mb-2">
+                        <img
+                          src={video.thumbnail || "/placeholder.svg"}
+                          alt={video.title}
+                          className="w-full h-24 object-cover rounded"
+                        />
+                        {video.duration && (
+                          <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
+                            {formatDuration(video.duration)}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
+                      <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
+                      {video.suggestedBy && (
+                        <p className="text-green-400 text-xs mb-1">Sugerido por: {video.suggestedBy}</p>
+                      )}
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          {video.viewCount && (
+                            <span className="flex items-center gap-1">
+                              <Eye className="w-3 h-3" />
+                              {formatViewCount(video.viewCount)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
+                            <Play className="w-4 h-4 text-blue-400" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
+                            <ListPlus className="w-4 h-4 text-purple-400" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card> */}
 
         <div className="grid lg:grid-cols-3 gap-8 mb-8">
           <div className="lg:col-span-2">
