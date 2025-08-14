@@ -4,8 +4,8 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Search, Play, ListPlus, XCircle, SkipForward, SkipBack, Eye, RefreshCw } from "lucide-react"
-import dynamic from 'next/dynamic'
+import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle } from "lucide-react"
+import dynamic from "next/dynamic"
 import { useCallback } from "react"
 
 interface Video {
@@ -32,23 +32,23 @@ export default function VideoPage() {
 
   // Function to play the next video in the playlist
   const playNextVideo = useCallback(() => {
-    if (playlist.length === 0) return null;
-    
-    let nextIndex = currentPlaylistIndex + 1;
-    
+    if (playlist.length === 0) return null
+
+    let nextIndex = currentPlaylistIndex + 1
+
     // If we've reached the end of the playlist, loop back to the start
     if (nextIndex >= playlist.length) {
-      nextIndex = 0;
+      nextIndex = 0
     }
-    
-    const nextVideo = playlist[nextIndex];
+
+    const nextVideo = playlist[nextIndex]
     if (nextVideo) {
-      setCurrentVideo(nextVideo);
-      setCurrentPlaylistIndex(nextIndex);
-      return nextVideo;
+      setCurrentVideo(nextVideo)
+      setCurrentPlaylistIndex(nextIndex)
+      return nextVideo
     }
-    return null;
-  }, [currentPlaylistIndex, playlist]);
+    return null
+  }, [currentPlaylistIndex, playlist])
 
   const searchVideos = async () => {
     if (!searchQuery.trim()) return
@@ -78,11 +78,11 @@ export default function VideoPage() {
   // Función para cargar sugerencias
   // Importar dinámicamente el componente de sugerencias para deshabilitar el SSR
   const SuggestionsList = dynamic<{}>(
-    () => import('./components/suggestions-list').then(mod => mod.SuggestionsList),
+    () => import("./components/suggestions-list").then((mod) => mod.SuggestionsList),
     {
       ssr: false,
-      loading: () => <div className="text-center py-4">Cargando sugerencias...</div>
-    }
+      loading: () => <div className="text-center py-4">Cargando sugerencias...</div>,
+    },
   )
 
   // Auto-play logic: prioritize playlist
@@ -95,56 +95,56 @@ export default function VideoPage() {
 
   // Set up auto-play timer when currentVideo changes
   useEffect(() => {
-    if (!currentVideo?.duration) return;
-    
+    if (!currentVideo?.duration) return
+
     // Parse duration in ISO 8601 format (e.g., 'PT1H2M3S')
     const parseDuration = (duration: string): number => {
-      const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/);
-      if (!match) return 0;
-      
-      const hours = parseInt(match[1]) || 0;
-      const minutes = parseInt(match[2]) || 0;
-      const seconds = parseInt(match[3]) || 0;
-      
-      return (hours * 3600 + minutes * 60 + seconds) * 1000; // Convert to milliseconds
-    };
-    
+      const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
+      if (!match) return 0
+
+      const hours = Number.parseInt(match[1]) || 0
+      const minutes = Number.parseInt(match[2]) || 0
+      const seconds = Number.parseInt(match[3]) || 0
+
+      return (hours * 3600 + minutes * 60 + seconds) * 1000 // Convert to milliseconds
+    }
+
     // Only set timer if we're playing from a playlist
     if (currentPlaylistIndex !== -1 && playlist.length > 0) {
-      const durationMs = parseDuration(currentVideo.duration);
-      
+      const durationMs = parseDuration(currentVideo.duration)
+
       if (durationMs > 0) {
         // Set a timeout to play the next video when the current one ends
         const timer = setTimeout(() => {
-          playNextVideo();
-        }, durationMs);
-        
-        setAutoPlayTimer(timer);
+          playNextVideo()
+        }, durationMs)
+
+        setAutoPlayTimer(timer)
       }
     }
-    
+
     // Clean up timer on unmount or when video changes
     return () => {
       if (autoPlayTimer) {
-        clearTimeout(autoPlayTimer);
+        clearTimeout(autoPlayTimer)
       }
-    };
-  }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo]);
-  
+    }
+  }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo])
+
   // Play video function
 
   const playVideo = (video: Video, isFromPlaylist = false, index = -1) => {
     // Clear any existing auto-play timer
     if (autoPlayTimer) {
-      clearTimeout(autoPlayTimer);
-      setAutoPlayTimer(null);
+      clearTimeout(autoPlayTimer)
+      setAutoPlayTimer(null)
     }
-    
-    setCurrentVideo(video);
+
+    setCurrentVideo(video)
     if (isFromPlaylist) {
-      setCurrentPlaylistIndex(index);
+      setCurrentPlaylistIndex(index)
     } else {
-      setCurrentPlaylistIndex(-1); // Not playing from playlist
+      setCurrentPlaylistIndex(-1) // Not playing from playlist
     }
   }
 
@@ -181,11 +181,11 @@ export default function VideoPage() {
 
     let nextIndex = currentPlaylistIndex + 1
     if (nextIndex >= playlist.length) {
-      nextIndex = 0 // Loop back to start
+      nextIndex = 0
     }
     setCurrentVideo(playlist[nextIndex])
     setCurrentPlaylistIndex(nextIndex)
-  }, [playlist, currentPlaylistIndex])
+  }, [playlist, currentPlaylistIndex]) // Removed isLoopEnabled dependency
 
   const handlePlayPreviousInPlaylist = useCallback(() => {
     if (playlist.length === 0) return
@@ -247,7 +247,11 @@ export default function VideoPage() {
                 className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
                 onKeyPress={(e) => e.key === "Enter" && searchVideos()}
               />
-              <Button onClick={searchVideos} disabled={loading} className="bg-blue-600 hover:bg-blue-700">
+              <Button
+                onClick={searchVideos}
+                disabled={loading}
+                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+              >
                 <Search className="w-4 h-4 mr-2" />
                 {loading ? "Buscando..." : "Buscar"}
               </Button>
@@ -255,73 +259,7 @@ export default function VideoPage() {
           </CardContent>
         </Card>
 
-        {/* Listener Suggestions Section */}
-        <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div>
-              <CardTitle className="text-white">Sugerencias de Oyentes</CardTitle>
-              <CardDescription className="text-gray-300">Videos sugeridos por la audiencia</CardDescription>
-            </div>
-            <Button variant="ghost" size="icon" onClick={loadSuggestions} className="text-white hover:bg-white/20">
-              <RefreshCw className="w-5 h-5" />
-              <span className="sr-only">Actualizar sugerencias</span>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            {suggestions.length === 0 ? (
-              <p className="text-gray-400">No hay sugerencias aún.</p>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {suggestions.map((video) => (
-                  <Card
-                    key={video.id}
-                    className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
-                  >
-                    <CardContent className="p-3">
-                      <div className="relative mb-2">
-                        <img
-                          src={video.thumbnail || "/placeholder.svg"}
-                          alt={video.title}
-                          className="w-full h-24 object-cover rounded"
-                        />
-                        {video.duration && (
-                          <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
-                            {formatDuration(video.duration)}
-                          </span>
-                        )}
-                      </div>
-                      <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
-                      <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
-                      {video.suggestedBy && (
-                        <p className="text-green-400 text-xs mb-1">Sugerido por: {video.suggestedBy}</p>
-                      )}
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          {video.viewCount && (
-                            <span className="flex items-center gap-1">
-                              <Eye className="w-3 h-3" />
-                              {formatViewCount(video.viewCount)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
-                            <Play className="w-4 h-4 text-blue-400" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
-                            <ListPlus className="w-4 h-4 text-purple-400" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <div className="grid lg:grid-cols-3 gap-8">
+        <div className="grid lg:grid-cols-3 gap-8 mb-8">
           {/* Video Player */}
           <div className="lg:col-span-2">
             <Card className="bg-white/10 backdrop-blur-sm border-white/20">
@@ -334,17 +272,38 @@ export default function VideoPage() {
                       className="w-full h-full rounded-t-lg"
                       allowFullScreen
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      onLoad={() => {
+                        // Add event listener for video end
+                        const iframe = document.querySelector("iframe")
+                        if (iframe) {
+                          iframe.addEventListener("ended", () => {
+                            if (currentPlaylistIndex !== -1 && playlist.length > 0) {
+                              handlePlayNextInPlaylist()
+                            }
+                          })
+                        }
+                      }}
                     />
                     <div className="p-4">
                       <h2 className="text-xl font-bold text-white mb-2">{currentVideo.title}</h2>
                       <p className="text-gray-300 text-sm mb-2">{currentVideo.channelTitle}</p>
                       <p className="text-gray-400 text-sm line-clamp-3">{currentVideo.description}</p>
-                      <div className="flex gap-2 mt-4">
-                        <Button onClick={handlePlayPreviousInPlaylist} disabled={playlist.length === 0}>
-                          <SkipBack className="w-4 h-4 mr-2" /> Anterior
+                      <div className="flex gap-3 mt-4">
+                        <Button
+                          onClick={handlePlayPreviousInPlaylist}
+                          disabled={playlist.length === 0}
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2"
+                        >
+                          <SkipBack className="w-4 h-4" />
+                          Anterior
                         </Button>
-                        <Button onClick={handlePlayNextInPlaylist} disabled={playlist.length === 0}>
-                          Siguiente <SkipForward className="w-4 h-4 ml-2" />
+                        <Button
+                          onClick={handlePlayNextInPlaylist}
+                          disabled={playlist.length === 0}
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2"
+                        >
+                          Siguiente
+                          <SkipForward className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
@@ -361,13 +320,16 @@ export default function VideoPage() {
             </Card>
           </div>
 
-          {/* Playlist and Search Results */}
-          <div className="space-y-8">
+          <div>
             {/* Playlist Section */}
             <Card className="bg-white/10 backdrop-blur-sm border-white/20">
               <CardHeader>
-                <CardTitle className="text-white">Mi Playlist</CardTitle>
-                <CardDescription className="text-gray-300">Videos en cola para reproducir</CardDescription>
+                <div>
+                  <CardTitle className="text-white">Mi Playlist</CardTitle>
+                  <CardDescription className="text-gray-300">
+                    Videos en cola para reproducir (Loop automático activado)
+                  </CardDescription>
+                </div>
               </CardHeader>
               <CardContent>
                 {playlist.length === 0 ? (
@@ -418,53 +380,56 @@ export default function VideoPage() {
                 )}
               </CardContent>
             </Card>
+          </div>
+        </div>
 
-            {/* Search Results Section */}
-            <h3 className="text-xl font-bold text-white">Resultados de búsqueda</h3>
+        {/* Search Results Section */}
+        <Card className="bg-white/10 backdrop-blur-sm border-white/20">
+          <CardHeader>
+            <CardTitle className="text-white">Resultados de búsqueda</CardTitle>
+            <CardDescription className="text-gray-300">Videos encontrados en YouTube</CardDescription>
+          </CardHeader>
+          <CardContent>
             {videos.length === 0 && !loading ? (
               <p className="text-gray-400">No hay videos para mostrar. Realiza una búsqueda.</p>
             ) : (
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                 {videos.map((video) => (
                   <Card
                     key={video.id}
-                    className="bg-white/10 backdrop-blur-sm border-white/20 cursor-pointer hover:bg-white/20 transition-colors"
+                    className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
                   >
                     <CardContent className="p-3">
-                      <div className="flex gap-3">
-                        <div className="relative flex-shrink-0">
-                          <img
-                            src={video.thumbnail || "/placeholder.svg"}
-                            alt={video.title}
-                            className="w-24 h-16 object-cover rounded"
-                          />
-                          {video.duration && (
-                            <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
-                              {formatDuration(video.duration)}
+                      <div className="relative mb-2">
+                        <img
+                          src={video.thumbnail || "/placeholder.svg"}
+                          alt={video.title}
+                          className="w-full h-32 object-cover rounded"
+                        />
+                        {video.duration && (
+                          <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
+                            {formatDuration(video.duration)}
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
+                      <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
+                      <div className="flex items-center justify-between mt-2">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          {video.viewCount && (
+                            <span className="flex items-center gap-1">
+                              <Eye className="w-3 h-3" />
+                              {formatViewCount(video.viewCount)}
                             </span>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
-                          <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex items-center gap-2 text-xs text-gray-500">
-                              {video.viewCount && (
-                                <span className="flex items-center gap-1">
-                                  <Eye className="w-3 h-3" />
-                                  {formatViewCount(video.viewCount)}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex gap-1">
-                              <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
-                                <Play className="w-4 h-4 text-blue-400" />
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
-                                <ListPlus className="w-4 h-4 text-purple-400" />
-                              </Button>
-                            </div>
-                          </div>
+                        <div className="flex gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
+                            <Play className="w-4 h-4 text-blue-400" />
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
+                            <PlusCircle className="w-4 h-4 text-blue-400" />
+                          </Button>
                         </div>
                       </div>
                     </CardContent>
@@ -472,8 +437,8 @@ export default function VideoPage() {
                 ))}
               </div>
             )}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
