@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle } from "lucide-react"
+import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useCallback } from "react"
 
@@ -26,17 +26,23 @@ export default function VideoPage() {
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null)
   const [loading, setLoading] = useState(false)
   const [playlist, setPlaylist] = useState<Video[]>([])
-  const [suggestions, setSuggestions] = useState<Video[]>([]) // Mantener para compatibilidad
-  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1) // -1 means no playlist item is currently playing
+  const [suggestions, setSuggestions] = useState<Video[]>([])
+  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1)
   const [autoPlayTimer, setAutoPlayTimer] = useState<NodeJS.Timeout | null>(null)
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(false)
 
-  // Function to play the next video in the playlist
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalResults, setTotalResults] = useState(0)
+  const [nextPageToken, setNextPageToken] = useState<string | null>(null)
+  const [prevPageToken, setPrevPageToken] = useState<string | null>(null)
+  const [pageTokens, setPageTokens] = useState<{ [key: number]: string }>({})
+  const resultsPerPage = 10
+
   const playNextVideo = useCallback(() => {
     if (playlist.length === 0) return null
 
     let nextIndex = currentPlaylistIndex + 1
 
-    // If we've reached the end of the playlist, loop back to the start
     if (nextIndex >= playlist.length) {
       nextIndex = 0
     }
@@ -50,18 +56,55 @@ export default function VideoPage() {
     return null
   }, [currentPlaylistIndex, playlist])
 
-  const searchVideos = async () => {
+  const searchVideos = async (page = 1, pageToken?: string) => {
     if (!searchQuery.trim()) return
 
     setLoading(true)
     try {
-      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`)
+      let url = `/api/search?q=${encodeURIComponent(searchQuery)}&page=${page}`
+      if (pageToken) {
+        url += `&pageToken=${pageToken}`
+      }
+
+      const response = await fetch(url)
       const data = await response.json()
+
       setVideos(data.videos || [])
+      setTotalResults(data.totalResults || 0)
+      setNextPageToken(data.nextPageToken || null)
+      setPrevPageToken(data.prevPageToken || null)
+      setCurrentPage(page)
+
+      if (data.nextPageToken) {
+        setPageTokens((prev) => ({
+          ...prev,
+          [page + 1]: data.nextPageToken,
+        }))
+      }
     } catch (error) {
       console.error("Error searching videos:", error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const goToNextPage = () => {
+    if (nextPageToken) {
+      searchVideos(currentPage + 1, nextPageToken)
+    }
+  }
+
+  const goToPrevPage = () => {
+    if (currentPage > 1) {
+      const prevToken = pageTokens[currentPage - 1]
+      searchVideos(currentPage - 1, prevToken)
+    }
+  }
+
+  const goToFirstPage = () => {
+    if (currentPage > 1) {
+      setPageTokens({}) // Limpiar tokens
+      searchVideos(1)
     }
   }
 
@@ -75,8 +118,6 @@ export default function VideoPage() {
     }
   }
 
-  // Función para cargar sugerencias
-  // Importar dinámicamente el componente de sugerencias para deshabilitar el SSR
   const SuggestionsList = dynamic<{}>(
     () => import("./components/suggestions-list").then((mod) => mod.SuggestionsList),
     {
@@ -85,7 +126,6 @@ export default function VideoPage() {
     },
   )
 
-  // Auto-play logic: prioritize playlist
   useEffect(() => {
     if (!currentVideo && playlist.length > 0) {
       setCurrentVideo(playlist[0])
@@ -93,11 +133,9 @@ export default function VideoPage() {
     }
   }, [currentVideo, playlist])
 
-  // Set up auto-play timer when currentVideo changes
   useEffect(() => {
     if (!currentVideo?.duration) return
 
-    // Parse duration in ISO 8601 format (e.g., 'PT1H2M3S')
     const parseDuration = (duration: string): number => {
       const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
       if (!match) return 0
@@ -109,12 +147,10 @@ export default function VideoPage() {
       return (hours * 3600 + minutes * 60 + seconds) * 1000 // Convert to milliseconds
     }
 
-    // Only set timer if we're playing from a playlist
     if (currentPlaylistIndex !== -1 && playlist.length > 0) {
       const durationMs = parseDuration(currentVideo.duration)
 
       if (durationMs > 0) {
-        // Set a timeout to play the next video when the current one ends
         const timer = setTimeout(() => {
           playNextVideo()
         }, durationMs)
@@ -123,7 +159,6 @@ export default function VideoPage() {
       }
     }
 
-    // Clean up timer on unmount or when video changes
     return () => {
       if (autoPlayTimer) {
         clearTimeout(autoPlayTimer)
@@ -131,10 +166,7 @@ export default function VideoPage() {
     }
   }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo])
 
-  // Play video function
-
   const playVideo = (video: Video, isFromPlaylist = false, index = -1) => {
-    // Clear any existing auto-play timer
     if (autoPlayTimer) {
       clearTimeout(autoPlayTimer)
       setAutoPlayTimer(null)
@@ -149,7 +181,6 @@ export default function VideoPage() {
   }
 
   const handleAddToPlaylist = (video: Video) => {
-    // Check if video already exists in playlist to avoid duplicates
     if (!playlist.some((item) => item.id === video.id)) {
       setPlaylist((prev) => [...prev, video])
     }
@@ -157,13 +188,10 @@ export default function VideoPage() {
 
   const handleRemoveFromPlaylist = (videoId: string) => {
     setPlaylist((prev) => prev.filter((video) => video.id !== videoId))
-    // If the removed video was the current one, or if the playlist becomes empty, reset current video
     if (currentVideo?.id === videoId || playlist.length === 1) {
-      // If it was the only one or the current one
       setCurrentVideo(null)
       setCurrentPlaylistIndex(-1)
     } else if (currentPlaylistIndex !== -1 && playlist[currentPlaylistIndex]?.id === videoId) {
-      // If the removed video was the current one in the playlist, try to play next or previous
       if (currentPlaylistIndex < playlist.length - 1) {
         setCurrentVideo(playlist[currentPlaylistIndex + 1])
       } else if (currentPlaylistIndex > 0) {
@@ -185,7 +213,7 @@ export default function VideoPage() {
     }
     setCurrentVideo(playlist[nextIndex])
     setCurrentPlaylistIndex(nextIndex)
-  }, [playlist, currentPlaylistIndex]) // Removed isLoopEnabled dependency
+  }, [playlist, currentPlaylistIndex])
 
   const handlePlayPreviousInPlaylist = useCallback(() => {
     if (playlist.length === 0) return
@@ -232,7 +260,6 @@ export default function VideoPage() {
           <p className="text-gray-300">Busca y reproduce videos de YouTube</p>
         </div>
 
-        {/* Search Section */}
         <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
           <CardHeader>
             <CardTitle className="text-white">Buscar Videos</CardTitle>
@@ -248,7 +275,7 @@ export default function VideoPage() {
                 onKeyPress={(e) => e.key === "Enter" && searchVideos()}
               />
               <Button
-                onClick={searchVideos}
+                onClick={() => searchVideos()}
                 disabled={loading}
                 className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
               >
@@ -260,20 +287,18 @@ export default function VideoPage() {
         </Card>
 
         <div className="grid lg:grid-cols-3 gap-8 mb-8">
-          {/* Video Player */}
           <div className="lg:col-span-2">
             <Card className="bg-white/10 backdrop-blur-sm border-white/20">
               <CardContent className="p-0">
                 {currentVideo ? (
                   <div className="aspect-video">
                     <iframe
-                      src={`https://www.youtube.com/embed/${currentVideo.id}?autoplay=1`}
+                      src={`https://www.youtube.com/embed/${currentVideo.id}${autoPlayEnabled ? "?autoplay=1" : ""}`}
                       title={currentVideo.title}
                       className="w-full h-full rounded-t-lg"
                       allowFullScreen
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       onLoad={() => {
-                        // Add event listener for video end
                         const iframe = document.querySelector("iframe")
                         if (iframe) {
                           iframe.addEventListener("ended", () => {
@@ -288,7 +313,7 @@ export default function VideoPage() {
                       <h2 className="text-xl font-bold text-white mb-2">{currentVideo.title}</h2>
                       <p className="text-gray-300 text-sm mb-2">{currentVideo.channelTitle}</p>
                       <p className="text-gray-400 text-sm line-clamp-3">{currentVideo.description}</p>
-                      <div className="flex gap-3 mt-4">
+                      <div className="flex flex-wrap gap-3 mt-4">
                         <Button
                           onClick={handlePlayPreviousInPlaylist}
                           disabled={playlist.length === 0}
@@ -304,6 +329,17 @@ export default function VideoPage() {
                         >
                           Siguiente
                           <SkipForward className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
+                          className={`font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center gap-2 ${
+                            autoPlayEnabled
+                              ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+                              : "bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700"
+                          } text-white`}
+                        >
+                          <Play className="w-4 h-4" />
+                          {autoPlayEnabled ? "Auto ON" : "Auto OFF"}
                         </Button>
                       </div>
                     </div>
@@ -321,7 +357,6 @@ export default function VideoPage() {
           </div>
 
           <div>
-            {/* Playlist Section */}
             <Card className="bg-white/10 backdrop-blur-sm border-white/20">
               <CardHeader>
                 <div>
@@ -335,7 +370,7 @@ export default function VideoPage() {
                 {playlist.length === 0 ? (
                   <p className="text-gray-400">La playlist está vacía. Agrega videos de la búsqueda o sugerencias.</p>
                 ) : (
-                  <div className="space-y-3">
+                  <div className="max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent space-y-3">
                     {playlist.map((video, index) => (
                       <Card
                         key={video.id}
@@ -383,59 +418,196 @@ export default function VideoPage() {
           </div>
         </div>
 
-        {/* Search Results Section */}
         <Card className="bg-white/10 backdrop-blur-sm border-white/20">
           <CardHeader>
-            <CardTitle className="text-white">Resultados de búsqueda</CardTitle>
-            <CardDescription className="text-gray-300">Videos encontrados en YouTube</CardDescription>
+            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
+              <div>
+                <CardTitle className="text-white">Resultados de búsqueda</CardTitle>
+                <CardDescription className="text-gray-300">
+                  {totalResults > 0 && (
+                    <>
+                      <span className="hidden sm:inline">
+                        Mostrando {(currentPage - 1) * resultsPerPage + 1}-
+                        {Math.min(currentPage * resultsPerPage, totalResults)} de {totalResults.toLocaleString()}{" "}
+                        resultados
+                      </span>
+                      <span className="sm:hidden">{totalResults.toLocaleString()} resultados encontrados</span>
+                    </>
+                  )}
+                  {totalResults === 0 && "Videos encontrados en YouTube"}
+                </CardDescription>
+              </div>
+              {videos.length > 0 && (
+                <div className="hidden lg:flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={goToFirstPage}
+                    disabled={currentPage === 1 || loading}
+                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                  >
+                    Primera
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={goToPrevPage}
+                    disabled={currentPage === 1 || loading}
+                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <span className="text-white text-sm px-2">Página {currentPage}</span>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={goToNextPage}
+                    disabled={!nextPageToken || loading}
+                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                  >
+                    Siguiente
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             {videos.length === 0 && !loading ? (
               <p className="text-gray-400">No hay videos para mostrar. Realiza una búsqueda.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {videos.map((video) => (
-                  <Card
-                    key={video.id}
-                    className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
-                  >
-                    <CardContent className="p-3">
-                      <div className="relative mb-2">
-                        <img
-                          src={video.thumbnail || "/placeholder.svg"}
-                          alt={video.title}
-                          className="w-full h-32 object-cover rounded"
-                        />
-                        {video.duration && (
-                          <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
-                            {formatDuration(video.duration)}
+              <>
+                <div className="max-h-[800px] overflow-y-auto scrollbar-thin scrollbar-thumb-white/20 scrollbar-track-transparent">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {videos.map((video) => (
+                      <Card
+                        key={video.id}
+                        className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
+                      >
+                        <CardContent className="p-3">
+                          <div className="relative mb-2">
+                            <img
+                              src={video.thumbnail || "/placeholder.svg"}
+                              alt={video.title}
+                              className="w-full h-32 object-cover rounded"
+                            />
+                            {video.duration && (
+                              <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
+                                {formatDuration(video.duration)}
+                              </span>
+                            )}
+                          </div>
+                          <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
+                          <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
+                          <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-2 text-xs text-gray-500">
+                              {video.viewCount && (
+                                <span className="flex items-center gap-1">
+                                  <Eye className="w-3 h-3" />
+                                  {formatViewCount(video.viewCount)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
+                                <Play className="w-4 h-4 text-blue-400" />
+                              </Button>
+                              <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
+                                <PlusCircle className="w-4 h-4 text-blue-400" />
+                              </Button>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+
+                {videos.length > 0 && (
+                  <div className="mt-6 pt-4 border-t border-white/10">
+                    <div className="flex flex-col gap-4 sm:hidden">
+                      <div className="text-center">
+                        <div className="text-white text-sm mb-1">Página {currentPage}</div>
+                        {totalResults > 0 && (
+                          <div className="text-xs text-gray-400">
+                            {(currentPage - 1) * resultsPerPage + 1}-
+                            {Math.min(currentPage * resultsPerPage, totalResults)} de {totalResults.toLocaleString()}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-center gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={goToPrevPage}
+                          disabled={currentPage === 1 || loading}
+                          className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1 max-w-[120px]"
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" />
+                          Anterior
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={goToNextPage}
+                          disabled={!nextPageToken || loading}
+                          className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1 max-w-[120px]"
+                        >
+                          Siguiente
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </Button>
+                      </div>
+                      {currentPage > 1 && (
+                        <div className="flex justify-center">
+                          <Button
+                            variant="outline"
+                            onClick={goToFirstPage}
+                            disabled={loading}
+                            className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-sm px-4"
+                          >
+                            Primera página
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="hidden sm:flex justify-center items-center gap-4">
+                      <Button
+                        variant="outline"
+                        onClick={goToFirstPage}
+                        disabled={currentPage === 1 || loading}
+                        className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                      >
+                        Primera página
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={goToPrevPage}
+                        disabled={currentPage === 1 || loading}
+                        className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                      >
+                        <ChevronLeft className="w-4 h-4 mr-2" />
+                        Anterior
+                      </Button>
+                      <div className="flex items-center gap-2 text-white px-4">
+                        <span className="text-sm">Página {currentPage}</span>
+                        {totalResults > 0 && (
+                          <span className="text-xs text-gray-400 hidden md:inline">
+                            ({totalResults.toLocaleString()} resultados)
                           </span>
                         )}
                       </div>
-                      <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
-                      <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
-                      <div className="flex items-center justify-between mt-2">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          {video.viewCount && (
-                            <span className="flex items-center gap-1">
-                              <Eye className="w-3 h-3" />
-                              {formatViewCount(video.viewCount)}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
-                            <Play className="w-4 h-4 text-blue-400" />
-                          </Button>
-                          <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
-                            <PlusCircle className="w-4 h-4 text-blue-400" />
-                          </Button>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
+                      <Button
+                        variant="outline"
+                        onClick={goToNextPage}
+                        disabled={!nextPageToken || loading}
+                        className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                      >
+                        Siguiente
+                        <ChevronRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>

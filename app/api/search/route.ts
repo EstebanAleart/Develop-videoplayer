@@ -5,16 +5,22 @@ const YOUTUBE_API_KEY = "AIzaSyAHqpHnF0ltaDodbnyQM8Up7ibuRVUyn-U"
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const query = searchParams.get("q")
+  const page = searchParams.get("page") || "1"
+  const pageToken = searchParams.get("pageToken")
 
   if (!query) {
     return NextResponse.json({ error: "Query parameter is required" }, { status: 400 })
   }
 
   try {
+    let searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=10&q=${encodeURIComponent(query)}&type=video&key=${YOUTUBE_API_KEY}`
+
+    if (pageToken) {
+      searchUrl += `&pageToken=${pageToken}`
+    }
+
     // Search for videos
-    const searchResponse = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=20&q=${encodeURIComponent(query)}&type=video&key=${YOUTUBE_API_KEY}`,
-    )
+    const searchResponse = await fetch(searchUrl)
 
     if (!searchResponse.ok) {
       throw new Error("Failed to search videos")
@@ -45,7 +51,14 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    return NextResponse.json({ videos })
+    return NextResponse.json({
+      videos,
+      totalResults: searchData.pageInfo?.totalResults || 0,
+      resultsPerPage: searchData.pageInfo?.resultsPerPage || 10,
+      nextPageToken: searchData.nextPageToken || null,
+      prevPageToken: searchData.prevPageToken || null,
+      currentPage: Number.parseInt(page),
+    })
   } catch (error) {
     console.error("Error searching videos:", error)
     return NextResponse.json({ error: "Failed to search videos" }, { status: 500 })
