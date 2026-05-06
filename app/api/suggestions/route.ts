@@ -1,6 +1,6 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-const YOUTUBE_API_KEY = "AIzaSyAHqpHnF0ltaDodbnyQM8Up7ibuRVUyn-U"
+const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
 
 // Almacenamiento temporal en memoria (en producción usarías una base de datos)
 let suggestions: any[] = []

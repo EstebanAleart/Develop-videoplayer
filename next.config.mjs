@@ -9,6 +9,7 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  serverExternalPackages: ["@distube/ytdl-core", "youtubei.js"],
 }
 
 export default nextConfig

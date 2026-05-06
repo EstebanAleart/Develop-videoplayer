@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight } from "lucide-react"
+import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight, Download } from "lucide-react"
 import dynamic from "next/dynamic"
 import { useCallback } from "react"
 
@@ -30,6 +30,8 @@ export default function VideoPage() {
   const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1)
   const [autoPlayTimer, setAutoPlayTimer] = useState<NodeJS.Timeout | null>(null)
   const [autoPlayEnabled, setAutoPlayEnabled] = useState(true) // cambiado de false a true para que inicie activado
+
+  const [downloadMenuFor, setDownloadMenuFor] = useState<string | null>(null)
 
   const [currentPage, setCurrentPage] = useState(1)
   const [totalResults, setTotalResults] = useState(0)
@@ -249,6 +251,13 @@ export default function VideoPage() {
     setCurrentPlaylistIndex(prevIndex)
   }, [playlist, currentPlaylistIndex])
 
+  const handleDownload = (videoId: string, format: "audio" | "video") => {
+    const a = document.createElement("a")
+    a.href = `/api/download?videoId=${videoId}&format=${format}`
+    a.click()
+    setDownloadMenuFor(null)
+  }
+
   const formatDuration = (duration: string) => {
     if (!duration) return ""
     const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
@@ -364,6 +373,31 @@ export default function VideoPage() {
                           <Play className="w-4 h-4" />
                           {autoPlayEnabled ? "Auto ON" : "Auto OFF"}
                         </Button>
+                        <div className="relative">
+                          <Button
+                            onClick={() => setDownloadMenuFor(downloadMenuFor === currentVideo.id ? null : currentVideo.id)}
+                            className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            Descargar
+                          </Button>
+                          {downloadMenuFor === currentVideo.id && (
+                            <div className="absolute top-full left-0 mt-1 z-10 bg-gray-900 border border-white/20 rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[130px]">
+                              <button
+                                onClick={() => handleDownload(currentVideo.id, "audio")}
+                                className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
+                              >
+                                MP3 (solo audio)
+                              </button>
+                              <button
+                                onClick={() => handleDownload(currentVideo.id, "video")}
+                                className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
+                              >
+                                MP4 (video)
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -531,13 +565,41 @@ export default function VideoPage() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex gap-1">
+                            <div className="flex gap-1 items-center">
                               <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
                                 <Play className="w-4 h-4 text-blue-400" />
                               </Button>
                               <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
                                 <PlusCircle className="w-4 h-4 text-blue-400" />
                               </Button>
+                              <div className="relative">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setDownloadMenuFor(downloadMenuFor === video.id ? null : video.id)
+                                  }}
+                                >
+                                  <Download className="w-4 h-4 text-purple-400" />
+                                </Button>
+                                {downloadMenuFor === video.id && (
+                                  <div className="absolute bottom-full right-0 mb-1 z-10 bg-gray-900 border border-white/20 rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[130px]">
+                                    <button
+                                      onClick={() => handleDownload(video.id, "audio")}
+                                      className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
+                                    >
+                                      MP3 (solo audio)
+                                    </button>
+                                    <button
+                                      onClick={() => handleDownload(video.id, "video")}
+                                      className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
+                                    >
+                                      MP4 (video)
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </CardContent>
