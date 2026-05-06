@@ -2,6 +2,7 @@ import type { Metadata } from 'next'
 import { GeistSans } from 'geist/font/sans'
 import { GeistMono } from 'geist/font/mono'
 import { HeroUIProvider } from '@heroui/react'
+import { Toaster } from 'sonner'
 
 import './globals.css'
 
@@ -30,6 +31,7 @@ html {
       <body>
         <HeroUIProvider>
           {children}
+          <Toaster position="bottom-right" theme="dark" richColors />
         </HeroUIProvider>
       </body>
     </html>

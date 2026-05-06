@@ -1,12 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
-import { Search, Play, XCircle, SkipForward, SkipBack, Eye, PlusCircle, ChevronLeft, ChevronRight, Download } from "lucide-react"
+import { useState, useEffect, useCallback, useRef } from "react"
+import { createPortal } from "react-dom"
+import { motion, AnimatePresence } from "framer-motion"
+import { toast } from "sonner"
+import {
+  Search, Play, X, SkipForward, SkipBack, Eye, Plus, ChevronLeft,
+  ChevronRight, Download, ListMusic, Shuffle, Volume2, Keyboard
+} from "lucide-react"
 import dynamic from "next/dynamic"
-import { useCallback } from "react"
 
 interface Video {
   id: string
@@ -20,235 +22,195 @@ interface Video {
   suggestedBy?: string
 }
 
+const SuggestionsList = dynamic<{}>(
+  () => import("./components/suggestions-list").then((mod) => mod.SuggestionsList),
+  { ssr: false, loading: () => <p className="text-zinc-500 text-sm">Cargando sugerencias...</p> }
+)
+
+// Portal dropdown — renders in body to avoid z-index issues
+function DownloadDropdown({ videoId, onDownload, onClose }: {
+  videoId: string
+  onDownload: (id: string, fmt: "audio" | "video") => void
+  onClose: () => void
+}) {
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+
+  useEffect(() => {
+    const btn = document.querySelector(`[data-download-btn="${videoId}"]`)
+    if (btn) {
+      const rect = btn.getBoundingClientRect()
+      setPos({ top: rect.bottom + window.scrollY + 6, left: rect.left + window.scrollX })
+    }
+    const close = (e: MouseEvent) => {
+      if (
+        !(e.target as HTMLElement).closest(`[data-download-btn="${videoId}"]`) &&
+        !(e.target as HTMLElement).closest("[data-download-menu]")
+      ) onClose()
+    }
+    document.addEventListener("mousedown", close)
+    return () => document.removeEventListener("mousedown", close)
+  }, [videoId, onClose])
+
+  if (typeof window === "undefined") return null
+
+  return createPortal(
+    <motion.div
+      data-download-menu
+      initial={{ opacity: 0, scale: 0.95, y: -4 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.95, y: -4 }}
+      transition={{ duration: 0.12 }}
+      style={{ position: "absolute", top: pos.top, left: pos.left, zIndex: 9999 }}
+      className="bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden min-w-[148px]"
+    >
+      <button
+        onClick={() => onDownload(videoId, "audio")}
+        className="w-full px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-700 text-left transition-colors flex items-center gap-2"
+      >
+        <Volume2 className="w-3.5 h-3.5 text-zinc-400" /> M4A (audio)
+      </button>
+      <div className="border-t border-zinc-700" />
+      <button
+        onClick={() => onDownload(videoId, "video")}
+        className="w-full px-4 py-2.5 text-sm text-zinc-200 hover:bg-zinc-700 text-left transition-colors flex items-center gap-2"
+      >
+        <Play className="w-3.5 h-3.5 text-zinc-400" /> MP4 (video)
+      </button>
+    </motion.div>,
+    document.body
+  )
+}
+
+function SkeletonCard() {
+  return (
+    <div className="bg-zinc-900 rounded-xl p-3 animate-pulse border border-zinc-800">
+      <div className="w-full h-32 bg-zinc-800 rounded-lg mb-3" />
+      <div className="h-3 bg-zinc-800 rounded w-4/5 mb-2" />
+      <div className="h-3 bg-zinc-800 rounded w-1/2" />
+    </div>
+  )
+}
+
 export default function VideoPage() {
   const [searchQuery, setSearchQuery] = useState("")
   const [videos, setVideos] = useState<Video[]>([])
   const [currentVideo, setCurrentVideo] = useState<Video | null>(null)
   const [loading, setLoading] = useState(false)
   const [playlist, setPlaylist] = useState<Video[]>([])
-  const [suggestions, setSuggestions] = useState<Video[]>([])
-  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState<number>(-1)
+  const [currentPlaylistIndex, setCurrentPlaylistIndex] = useState(-1)
   const [autoPlayTimer, setAutoPlayTimer] = useState<NodeJS.Timeout | null>(null)
-  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true) // cambiado de false a true para que inicie activado
-
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true)
   const [downloadMenuFor, setDownloadMenuFor] = useState<string | null>(null)
-
+  const [titleExpanded, setTitleExpanded] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalResults, setTotalResults] = useState(0)
   const [nextPageToken, setNextPageToken] = useState<string | null>(null)
-  const [prevPageToken, setPrevPageToken] = useState<string | null>(null)
   const [pageTokens, setPageTokens] = useState<{ [key: number]: string }>({})
   const resultsPerPage = 10
 
-  const isMobile = () => {
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
-  }
+  // Persist playlist
+  useEffect(() => {
+    const saved = localStorage.getItem("rvp-playlist")
+    if (saved) { try { setPlaylist(JSON.parse(saved)) } catch {} }
+  }, [])
+  useEffect(() => { localStorage.setItem("rvp-playlist", JSON.stringify(playlist)) }, [playlist])
 
   const getYouTubeEmbedUrl = (videoId: string, autoplay: boolean) => {
-    const baseUrl = `https://www.youtube.com/embed/${videoId}`
     const params = new URLSearchParams({
-      playsinline: "1", // Reproduce en línea en iOS
-      rel: "0", // No muestra videos relacionados
-      modestbranding: "1", // Reduce el branding de YouTube
-      origin: window.location.origin, // Especifica el origen para evitar redirecciones
-      enablejsapi: "1", // Habilita la API de JavaScript
-      fs: "1", // Permite pantalla completa
-      iv_load_policy: "3", // Oculta anotaciones
+      playsinline: "1", rel: "0", modestbranding: "1",
+      origin: window.location.origin, enablejsapi: "1", fs: "1", iv_load_policy: "3",
     })
-
-    if (autoplay) {
-      params.append("autoplay", "1")
-    }
-
-    return `${baseUrl}?${params.toString()}`
+    if (autoplay) params.append("autoplay", "1")
+    return `https://www.youtube.com/embed/${videoId}?${params}`
   }
 
   const playNextVideo = useCallback(() => {
-    if (playlist.length === 0) return null
-
-    let nextIndex = currentPlaylistIndex + 1
-
-    if (nextIndex >= playlist.length) {
-      nextIndex = 0
-    }
-
-    const nextVideo = playlist[nextIndex]
-    if (nextVideo) {
-      setCurrentVideo(nextVideo)
-      setCurrentPlaylistIndex(nextIndex)
-      return nextVideo
-    }
-    return null
+    if (!playlist.length) return null
+    const nextIndex = (currentPlaylistIndex + 1) % playlist.length
+    setCurrentVideo(playlist[nextIndex])
+    setCurrentPlaylistIndex(nextIndex)
+    return playlist[nextIndex]
   }, [currentPlaylistIndex, playlist])
 
   const searchVideos = async (page = 1, pageToken?: string) => {
     if (!searchQuery.trim()) return
-
     setLoading(true)
     try {
       let url = `/api/search?q=${encodeURIComponent(searchQuery)}&page=${page}`
-      if (pageToken) {
-        url += `&pageToken=${pageToken}`
-      }
-
-      const response = await fetch(url)
-      const data = await response.json()
-
+      if (pageToken) url += `&pageToken=${pageToken}`
+      const res = await fetch(url)
+      const data = await res.json()
       setVideos(data.videos || [])
       setTotalResults(data.totalResults || 0)
       setNextPageToken(data.nextPageToken || null)
-      setPrevPageToken(data.prevPageToken || null)
       setCurrentPage(page)
-
-      if (data.nextPageToken) {
-        setPageTokens((prev) => ({
-          ...prev,
-          [page + 1]: data.nextPageToken,
-        }))
-      }
-    } catch (error) {
-      console.error("Error searching videos:", error)
+      if (data.nextPageToken) setPageTokens(prev => ({ ...prev, [page + 1]: data.nextPageToken }))
+    } catch {
+      toast.error("Error al buscar videos")
     } finally {
       setLoading(false)
     }
   }
 
-  const goToNextPage = () => {
-    if (nextPageToken) {
-      searchVideos(currentPage + 1, nextPageToken)
-    }
-  }
-
-  const goToPrevPage = () => {
-    if (currentPage > 1) {
-      const prevToken = pageTokens[currentPage - 1]
-      searchVideos(currentPage - 1, prevToken)
-    }
-  }
-
-  const goToFirstPage = () => {
-    if (currentPage > 1) {
-      setPageTokens({}) // Limpiar tokens
-      searchVideos(1)
-    }
-  }
-
-  const loadSuggestions = async () => {
-    try {
-      const response = await fetch("/api/suggestions")
-      const data = await response.json()
-      setSuggestions(data.suggestions || [])
-    } catch (error) {
-      console.error("Error loading suggestions:", error)
-    }
-  }
-
-  const SuggestionsList = dynamic<{}>(
-    () => import("./components/suggestions-list").then((mod) => mod.SuggestionsList),
-    {
-      ssr: false,
-      loading: () => <div className="text-center py-4">Cargando sugerencias...</div>,
-    },
-  )
-
   useEffect(() => {
-    if (!currentVideo && playlist.length > 0) {
-      setCurrentVideo(playlist[0])
-      setCurrentPlaylistIndex(0)
-    }
+    if (!currentVideo && playlist.length > 0) { setCurrentVideo(playlist[0]); setCurrentPlaylistIndex(0) }
   }, [currentVideo, playlist])
 
   useEffect(() => {
-    if (!currentVideo?.duration || !autoPlayEnabled) return
-
-    const parseDuration = (duration: string): number => {
-      const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
-      if (!match) return 0
-
-      const hours = Number.parseInt(match[1]) || 0
-      const minutes = Number.parseInt(match[2]) || 0
-      const seconds = Number.parseInt(match[3]) || 0
-
-      return (hours * 3600 + minutes * 60 + seconds) * 1000 // Convert to milliseconds
+    if (!currentVideo?.duration || !autoPlayEnabled || currentPlaylistIndex === -1) return
+    const parse = (d: string) => {
+      const m = d.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
+      if (!m) return 0
+      return ((parseInt(m[1]) || 0) * 3600 + (parseInt(m[2]) || 0) * 60 + (parseInt(m[3]) || 0)) * 1000
     }
-
-    if (currentPlaylistIndex !== -1 && playlist.length > 0) {
-      const durationMs = parseDuration(currentVideo.duration)
-
-      if (durationMs > 0) {
-        const timer = setTimeout(() => {
-          playNextVideo()
-        }, durationMs)
-
-        setAutoPlayTimer(timer)
-      }
-    }
-
-    return () => {
-      if (autoPlayTimer) {
-        clearTimeout(autoPlayTimer)
-      }
+    const ms = parse(currentVideo.duration)
+    if (ms > 0) {
+      const t = setTimeout(() => playNextVideo(), ms)
+      setAutoPlayTimer(t)
+      return () => clearTimeout(t)
     }
   }, [currentVideo, currentPlaylistIndex, playlist, playNextVideo, autoPlayEnabled])
 
-  const playVideo = (video: Video, isFromPlaylist = false, index = -1) => {
-    if (autoPlayTimer) {
-      clearTimeout(autoPlayTimer)
-      setAutoPlayTimer(null)
+  // Keyboard shortcuts
+  useEffect(() => {
+    const fn = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).tagName === "INPUT") return
+      if (e.key === "ArrowRight") handlePlayNextInPlaylist()
+      if (e.key === "ArrowLeft") handlePlayPreviousInPlaylist()
     }
+    window.addEventListener("keydown", fn)
+    return () => window.removeEventListener("keydown", fn)
+  }, [])
 
+  const playVideo = (video: Video, isFromPlaylist = false, index = -1) => {
+    if (autoPlayTimer) { clearTimeout(autoPlayTimer); setAutoPlayTimer(null) }
     setCurrentVideo(video)
-    if (isFromPlaylist) {
-      setCurrentPlaylistIndex(index)
-    } else {
-      setCurrentPlaylistIndex(-1) // Not playing from playlist
-    }
+    setCurrentPlaylistIndex(isFromPlaylist ? index : -1)
+    setTitleExpanded(false)
   }
 
   const handleAddToPlaylist = (video: Video) => {
-    if (!playlist.some((item) => item.id === video.id)) {
-      setPlaylist((prev) => [...prev, video])
-    }
+    if (playlist.some(v => v.id === video.id)) { toast.info("Ya está en la playlist"); return }
+    setPlaylist(prev => [...prev, video])
+    toast.success("Agregado a la playlist")
   }
 
   const handleRemoveFromPlaylist = (videoId: string) => {
-    setPlaylist((prev) => prev.filter((video) => video.id !== videoId))
-    if (currentVideo?.id === videoId || playlist.length === 1) {
-      setCurrentVideo(null)
-      setCurrentPlaylistIndex(-1)
-    } else if (currentPlaylistIndex !== -1 && playlist[currentPlaylistIndex]?.id === videoId) {
-      if (currentPlaylistIndex < playlist.length - 1) {
-        setCurrentVideo(playlist[currentPlaylistIndex + 1])
-      } else if (currentPlaylistIndex > 0) {
-        setCurrentVideo(playlist[currentPlaylistIndex - 1])
-        setCurrentPlaylistIndex(currentPlaylistIndex - 1) // Adjust index if playing previous
-      } else {
-        setCurrentVideo(null)
-        setCurrentPlaylistIndex(-1)
-      }
-    }
+    setPlaylist(prev => prev.filter(v => v.id !== videoId))
+    if (currentVideo?.id === videoId) { setCurrentVideo(null); setCurrentPlaylistIndex(-1) }
+    toast("Eliminado", { icon: "🗑️" })
   }
 
   const handlePlayNextInPlaylist = useCallback(() => {
-    if (playlist.length === 0) return
-
-    let nextIndex = currentPlaylistIndex + 1
-    if (nextIndex >= playlist.length) {
-      nextIndex = 0
-    }
-    setCurrentVideo(playlist[nextIndex])
-    setCurrentPlaylistIndex(nextIndex)
+    if (!playlist.length) return
+    const next = (currentPlaylistIndex + 1) % playlist.length
+    setCurrentVideo(playlist[next]); setCurrentPlaylistIndex(next)
   }, [playlist, currentPlaylistIndex])
 
   const handlePlayPreviousInPlaylist = useCallback(() => {
-    if (playlist.length === 0) return
-
-    let prevIndex = currentPlaylistIndex - 1
-    if (prevIndex < 0) {
-      prevIndex = playlist.length - 1 // Loop to end
-    }
-    setCurrentVideo(playlist[prevIndex])
-    setCurrentPlaylistIndex(prevIndex)
+    if (!playlist.length) return
+    const prev = (currentPlaylistIndex - 1 + playlist.length) % playlist.length
+    setCurrentVideo(playlist[prev]); setCurrentPlaylistIndex(prev)
   }, [playlist, currentPlaylistIndex])
 
   const handleDownload = (videoId: string, format: "audio" | "video") => {
@@ -256,446 +218,301 @@ export default function VideoPage() {
     a.href = `/api/download?videoId=${videoId}&format=${format}`
     a.click()
     setDownloadMenuFor(null)
+    toast.success(`Descargando ${format === "audio" ? "M4A" : "MP4"}...`)
   }
 
-  const formatDuration = (duration: string) => {
+  const fmt = (duration: string) => {
     if (!duration) return ""
-    const match = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
-    if (!match) return ""
-
-    const hours = match[1] ? Number.parseInt(match[1]) : 0
-    const minutes = match[2] ? Number.parseInt(match[2]) : 0
-    const seconds = match[3] ? Number.parseInt(match[3]) : 0
-
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`
-    }
-    return `${minutes}:${seconds.toString().padStart(2, "0")}`
+    const m = duration.match(/PT(\d+H)?(\d+M)?(\d+S)?/)
+    if (!m) return ""
+    const h = m[1] ? parseInt(m[1]) : 0, min = m[2] ? parseInt(m[2]) : 0, s = m[3] ? parseInt(m[3]) : 0
+    return h > 0 ? `${h}:${String(min).padStart(2,"0")}:${String(s).padStart(2,"0")}` : `${min}:${String(s).padStart(2,"0")}`
   }
 
-  const formatViewCount = (count: string) => {
-    if (!count) return ""
-    const num = Number.parseInt(count)
-    if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M views`
-    } else if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K views`
-    }
-    return `${num} views`
+  const fmtViews = (count: string) => {
+    const n = parseInt(count)
+    if (n >= 1e6) return `${(n/1e6).toFixed(1)}M`
+    if (n >= 1e3) return `${(n/1e3).toFixed(0)}K`
+    return `${n}`
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900">
-      <div className="container mx-auto px-4 py-8">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-white mb-4">Radio Video Player</h1>
-          <p className="text-gray-300">Busca y reproduce videos de YouTube</p>
-        </div>
-
-        <Card className="mb-8 bg-white/10 backdrop-blur-sm border-white/20">
-          <CardHeader>
-            <CardTitle className="text-white">Buscar Videos</CardTitle>
-            <CardDescription className="text-gray-300">Encuentra videos en YouTube</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex gap-2">
-              <Input
-                placeholder="Buscar videos..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-white/10 border-white/20 text-white placeholder:text-gray-400"
-                onKeyPress={(e) => e.key === "Enter" && searchVideos()}
-              />
-              <Button
-                onClick={() => searchVideos()}
-                disabled={loading}
-                className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-              >
-                <Search className="w-4 h-4 mr-2" />
-                {loading ? "Buscando..." : "Buscar"}
-              </Button>
+    <div className="min-h-screen bg-black text-white">
+      {/* Header */}
+      <header className="border-b border-zinc-900 bg-black/80 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-screen-2xl mx-auto px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+          {/* Logo */}
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <div className="w-8 h-8 bg-green-500 rounded-lg flex items-center justify-center">
+              <Play className="w-4 h-4 text-black fill-black" />
             </div>
-          </CardContent>
-        </Card>
+            <span className="font-bold text-base sm:text-lg tracking-tight">Radio Player</span>
+          </div>
+          {/* Search bar + button — full width on mobile, flex-1 on sm+ */}
+          <div className="flex items-center gap-2 flex-1">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Buscar videos en YouTube..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && searchVideos()}
+                className="w-full bg-zinc-900 border border-zinc-800 rounded-full pl-10 pr-4 py-2.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-zinc-600 transition-colors"
+              />
+            </div>
+            <button
+              onClick={() => searchVideos()}
+              disabled={loading}
+              className="bg-green-500 text-black text-sm font-semibold px-5 py-2.5 rounded-full hover:bg-green-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex-shrink-0"
+            >
+              {loading ? "Buscando..." : "Buscar"}
+            </button>
+          </div>
+        </div>
+      </header>
 
-        <div className="grid lg:grid-cols-3 gap-8 mb-8">
-          <div className="lg:col-span-2">
-            <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-              <CardContent className="p-0">
-                {currentVideo ? (
-                  <div className="aspect-video">
-                    <iframe
-                      src={getYouTubeEmbedUrl(currentVideo.id, autoPlayEnabled)}
-                      title={currentVideo.title}
-                      className="w-full h-full rounded-t-lg"
-                      allowFullScreen
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                      onLoad={() => {
-                        const iframe = document.querySelector("iframe")
-                        if (iframe) {
-                          iframe.addEventListener("ended", () => {
-                            if (currentPlaylistIndex !== -1 && playlist.length > 0) {
-                              handlePlayNextInPlaylist()
-                            }
-                          })
-                        }
-                      }}
-                    />
-                    <div className="p-4">
-                      <h2 className="text-xl font-bold text-white mb-2">{currentVideo.title}</h2>
-                      <p className="text-gray-300 text-sm mb-2">{currentVideo.channelTitle}</p>
-                      <p className="text-gray-400 text-sm line-clamp-3">{currentVideo.description}</p>
-                      <div className="flex flex-wrap gap-3 mt-4">
-                        <Button
+      <div className="max-w-screen-2xl mx-auto px-6 py-8">
+        <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-8">
+
+          {/* Left: Player + Results */}
+          <div className="space-y-8">
+            {/* Player */}
+            <AnimatePresence mode="wait">
+              {currentVideo ? (
+                <motion.div key={currentVideo.id} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.25 }}>
+                  <div className="rounded-2xl overflow-hidden bg-zinc-900 border border-zinc-800">
+                    <div className="aspect-[16/10]">
+                      <iframe
+                        src={getYouTubeEmbedUrl(currentVideo.id, autoPlayEnabled)}
+                        title={currentVideo.title}
+                        className="w-full h-full"
+                        allowFullScreen
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      />
+                    </div>
+                    <div className="p-5">
+                      <h2
+                        onClick={() => setTitleExpanded(v => !v)}
+                        title={currentVideo.title}
+                        className={`font-semibold text-lg leading-snug mb-1 cursor-pointer select-none transition-all duration-200 ${titleExpanded ? "" : "truncate"}`}
+                      >
+                        {currentVideo.title}
+                      </h2>
+                      <p className="text-zinc-400 text-sm mb-4">{currentVideo.channelTitle}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
                           onClick={handlePlayPreviousInPlaylist}
-                          disabled={playlist.length === 0}
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2"
+                          disabled={!playlist.length}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
-                          <SkipBack className="w-4 h-4" />
-                          Anterior
-                        </Button>
-                        <Button
+                          <SkipBack className="w-3.5 h-3.5" /><span className="hidden sm:inline">Anterior</span>
+                        </button>
+                        <button
                           onClick={handlePlayNextInPlaylist}
-                          disabled={playlist.length === 0}
-                          className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none flex items-center gap-2"
+                          disabled={!playlist.length}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-sm font-medium disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                         >
-                          Siguiente
-                          <SkipForward className="w-4 h-4" />
-                        </Button>
-                        <Button
+                          <span className="hidden sm:inline">Siguiente</span><SkipForward className="w-3.5 h-3.5" />
+                        </button>
+                        <button
                           onClick={() => setAutoPlayEnabled(!autoPlayEnabled)}
-                          className={`font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center gap-2 ${
-                            autoPlayEnabled
-                              ? "bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
-                              : "bg-gradient-to-r from-gray-500 to-gray-600 hover:from-gray-600 hover:to-gray-700"
-                          } text-white`}
+                          className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium transition-colors ${
+                            autoPlayEnabled ? "bg-green-500 text-black hover:bg-green-400" : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                          }`}
                         >
-                          <Play className="w-4 h-4" />
-                          {autoPlayEnabled ? "Auto ON" : "Auto OFF"}
-                        </Button>
-                        <div className="relative">
-                          <Button
+                          <Shuffle className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">{autoPlayEnabled ? "Auto ON" : "Auto OFF"}</span>
+                        </button>
+                        <div>
+                          <button
+                            data-download-btn={currentVideo.id}
                             onClick={() => setDownloadMenuFor(downloadMenuFor === currentVideo.id ? null : currentVideo.id)}
-                            className="bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white font-semibold px-4 py-2 rounded-lg shadow-lg hover:shadow-xl transition-all duration-200 transform hover:scale-105 flex items-center gap-2"
+                            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors"
                           >
-                            <Download className="w-4 h-4" />
-                            Descargar
-                          </Button>
-                          {downloadMenuFor === currentVideo.id && (
-                            <div className="absolute top-full left-0 mt-1 z-10 bg-gray-900 border border-white/20 rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[130px]">
-                              <button
-                                onClick={() => handleDownload(currentVideo.id, "audio")}
-                                className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
-                              >
-                                MP3 (solo audio)
-                              </button>
-                              <button
-                                onClick={() => handleDownload(currentVideo.id, "video")}
-                                className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
-                              >
-                                MP4 (video)
-                              </button>
-                            </div>
-                          )}
+                            <Download className="w-3.5 h-3.5" /><span className="hidden sm:inline">Descargar</span>
+                          </button>
+                          <AnimatePresence>
+                            {downloadMenuFor === currentVideo.id && (
+                              <DownloadDropdown videoId={currentVideo.id} onDownload={handleDownload} onClose={() => setDownloadMenuFor(null)} />
+                            )}
+                          </AnimatePresence>
                         </div>
+                        <button
+                          onClick={() => handleAddToPlaylist(currentVideo)}
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-zinc-800 hover:bg-zinc-700 text-sm font-medium transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" /><span className="hidden sm:inline">Playlist</span>
+                        </button>
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="aspect-video flex items-center justify-center bg-gray-800 rounded-lg">
-                    <div className="text-center">
-                      <Play className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                      <p className="text-gray-400">Selecciona un video para reproducir</p>
+                </motion.div>
+              ) : (
+                <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="rounded-2xl bg-zinc-900 border border-zinc-800 aspect-[16/10] flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-16 h-16 rounded-full bg-zinc-800 flex items-center justify-center mx-auto mb-3">
+                      <Play className="w-7 h-7 text-zinc-600" />
                     </div>
+                    <p className="text-zinc-500 text-sm">Selecciona un video para reproducir</p>
+                    <p className="text-zinc-700 text-xs mt-1 flex items-center justify-center gap-1">
+                      <Keyboard className="w-3 h-3" /> ← → para navegar la playlist
+                    </p>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
-          <div>
-            <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-              <CardHeader>
-                <div>
-                  <CardTitle className="text-white">Mi Playlist</CardTitle>
-                  <CardDescription className="text-gray-300">
-                    Videos en cola para reproducir (Loop automático activado)
-                  </CardDescription>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {playlist.length === 0 ? (
-                  <p className="text-gray-400">La playlist está vacía. Agrega videos de la búsqueda o sugerencias.</p>
-                ) : (
-                  <div className="max-h-[600px] overflow-y-auto scrollbar-hide space-y-3">
-                    {playlist.map((video, index) => (
-                      <Card
-                        key={video.id}
-                        className={`bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors ${
-                          currentPlaylistIndex === index ? "border-blue-500 ring-2 ring-blue-500" : ""
-                        }`}
-                        onClick={() => playVideo(video, true, index)}
-                      >
-                        <CardContent className="p-3">
-                          <div className="flex items-center gap-3">
-                            <div className="relative flex-shrink-0">
-                              <img
-                                src={video.thumbnail || "/placeholder.svg"}
-                                alt={video.title}
-                                className="w-20 h-14 object-cover rounded"
-                              />
-                              {video.duration && (
-                                <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
-                                  {formatDuration(video.duration)}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <h4 className="text-white text-sm font-medium line-clamp-2">{video.title}</h4>
-                              <p className="text-gray-400 text-xs">{video.channelTitle}</p>
-                            </div>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleRemoveFromPlaylist(video.id)
-                              }}
-                            >
-                              <XCircle className="w-4 h-4 text-red-400" />
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
+            {/* Search results */}
+            <div>
+              {(videos.length > 0 || loading) && (
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="font-semibold">Resultados</h3>
+                    {totalResults > 0 && <p className="text-zinc-500 text-xs mt-0.5">{totalResults.toLocaleString()} videos encontrados · Página {currentPage}</p>}
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-
-        <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
-              <div>
-                <CardTitle className="text-white">Resultados de búsqueda</CardTitle>
-                <CardDescription className="text-gray-300">
-                  {totalResults > 0 && (
-                    <>
-                      <span className="hidden sm:inline">
-                        Mostrando {(currentPage - 1) * resultsPerPage + 1}-
-                        {Math.min(currentPage * resultsPerPage, totalResults)} de {totalResults.toLocaleString()}{" "}
-                        resultados
-                      </span>
-                      <span className="sm:hidden">{totalResults.toLocaleString()} resultados encontrados</span>
-                    </>
+                  {videos.length > 0 && !loading && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => { setPageTokens({}); searchVideos(1) }} disabled={currentPage === 1} className="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors">Primera</button>
+                      <button onClick={() => searchVideos(currentPage - 1, pageTokens[currentPage - 1])} disabled={currentPage === 1} className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronLeft className="w-4 h-4" /></button>
+                      <button onClick={() => searchVideos(currentPage + 1, nextPageToken!)} disabled={!nextPageToken} className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"><ChevronRight className="w-4 h-4" /></button>
+                    </div>
                   )}
-                  {totalResults === 0 && "Videos encontrados en YouTube"}
-                </CardDescription>
-              </div>
-              {videos.length > 0 && (
-                <div className="hidden lg:flex items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={goToFirstPage}
-                    disabled={currentPage === 1 || loading}
-                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                  >
-                    Primera
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={goToPrevPage}
-                    disabled={currentPage === 1 || loading}
-                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </Button>
-                  <span className="text-white text-sm px-2">Página {currentPage}</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={goToNextPage}
-                    disabled={!nextPageToken || loading}
-                    className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                  >
-                    Siguiente
-                    <ChevronRight className="w-4 h-4" />
-                  </Button>
                 </div>
               )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {videos.length === 0 && !loading ? (
-              <p className="text-gray-400">No hay videos para mostrar. Realiza una búsqueda.</p>
-            ) : (
-              <>
-                <div className="max-h-[800px] overflow-y-auto scrollbar-hide">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {videos.map((video) => (
-                      <Card
-                        key={video.id}
-                        className="bg-white/5 backdrop-blur-sm border-white/10 cursor-pointer hover:bg-white/10 transition-colors"
-                      >
-                        <CardContent className="p-3">
-                          <div className="relative mb-2">
-                            <img
-                              src={video.thumbnail || "/placeholder.svg"}
-                              alt={video.title}
-                              className="w-full h-32 object-cover rounded"
-                            />
-                            {video.duration && (
-                              <span className="absolute bottom-1 right-1 bg-black/80 text-white text-xs px-1 rounded">
-                                {formatDuration(video.duration)}
-                              </span>
-                            )}
-                          </div>
-                          <h4 className="text-white text-sm font-medium line-clamp-2 mb-1">{video.title}</h4>
-                          <p className="text-gray-400 text-xs mb-1">{video.channelTitle}</p>
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex items-center gap-2 text-xs text-gray-500">
-                              {video.viewCount && (
-                                <span className="flex items-center gap-1">
-                                  <Eye className="w-3 h-3" />
-                                  {formatViewCount(video.viewCount)}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex gap-1 items-center">
-                              <Button size="sm" variant="ghost" onClick={() => playVideo(video)}>
-                                <Play className="w-4 h-4 text-blue-400" />
-                              </Button>
-                              <Button size="sm" variant="ghost" onClick={() => handleAddToPlaylist(video)}>
-                                <PlusCircle className="w-4 h-4 text-blue-400" />
-                              </Button>
-                              <div className="relative">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={(e) => {
-                                    e.stopPropagation()
-                                    setDownloadMenuFor(downloadMenuFor === video.id ? null : video.id)
-                                  }}
-                                >
-                                  <Download className="w-4 h-4 text-purple-400" />
-                                </Button>
-                                {downloadMenuFor === video.id && (
-                                  <div className="absolute bottom-full right-0 mb-1 z-10 bg-gray-900 border border-white/20 rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[130px]">
-                                    <button
-                                      onClick={() => handleDownload(video.id, "audio")}
-                                      className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
-                                    >
-                                      MP3 (solo audio)
-                                    </button>
-                                    <button
-                                      onClick={() => handleDownload(video.id, "video")}
-                                      className="px-4 py-2 text-sm text-white hover:bg-white/10 text-left transition-colors"
-                                    >
-                                      MP4 (video)
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+
+              {loading ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} />)}
                 </div>
-
-                {videos.length > 0 && (
-                  <div className="mt-6 pt-4 border-t border-white/10">
-                    <div className="flex flex-col gap-4 sm:hidden">
-                      <div className="text-center">
-                        <div className="text-white text-sm mb-1">Página {currentPage}</div>
-                        {totalResults > 0 && (
-                          <div className="text-xs text-gray-400">
-                            {(currentPage - 1) * resultsPerPage + 1}-
-                            {Math.min(currentPage * resultsPerPage, totalResults)} de {totalResults.toLocaleString()}
+              ) : videos.length === 0 ? (
+                <div className="text-center py-16 text-zinc-600">
+                  <Search className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                  <p>Busca algo para empezar</p>
+                </div>
+              ) : (
+                <motion.div
+                  className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3"
+                  initial="hidden" animate="visible"
+                  variants={{ visible: { transition: { staggerChildren: 0.04 } }, hidden: {} }}
+                >
+                  {videos.map(video => (
+                    <motion.div
+                      key={video.id}
+                      variants={{ hidden: { opacity: 0, y: 16 }, visible: { opacity: 1, y: 0 } }}
+                      className="group bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden hover:border-zinc-700 transition-colors"
+                    >
+                      <div className="relative cursor-pointer" onClick={() => playVideo(video)}>
+                        <img src={video.thumbnail || "/placeholder.svg"} alt={video.title} className="w-full h-32 object-cover" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                            <Play className="w-5 h-5 text-white fill-white" />
                           </div>
-                        )}
-                      </div>
-                      <div className="flex justify-center gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={goToPrevPage}
-                          disabled={currentPage === 1 || loading}
-                          className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1 max-w-[120px]"
-                        >
-                          <ChevronLeft className="w-4 h-4 mr-1" />
-                          Anterior
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={goToNextPage}
-                          disabled={!nextPageToken || loading}
-                          className="bg-white/10 border-white/20 text-white hover:bg-white/20 flex-1 max-w-[120px]"
-                        >
-                          Siguiente
-                          <ChevronRight className="w-4 h-4 ml-1" />
-                        </Button>
-                      </div>
-                      {currentPage > 1 && (
-                        <div className="flex justify-center">
-                          <Button
-                            variant="outline"
-                            onClick={goToFirstPage}
-                            disabled={loading}
-                            className="bg-white/10 border-white/20 text-white hover:bg-white/20 text-sm px-4"
-                          >
-                            Primera página
-                          </Button>
                         </div>
-                      )}
-                    </div>
-
-                    <div className="hidden sm:flex justify-center items-center gap-4">
-                      <Button
-                        variant="outline"
-                        onClick={goToFirstPage}
-                        disabled={currentPage === 1 || loading}
-                        className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                      >
-                        Primera página
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={goToPrevPage}
-                        disabled={currentPage === 1 || loading}
-                        className="bg-white/10 border-white/20 text-white hover:bg-white/20"
-                      >
-                        <ChevronLeft className="w-4 h-4 mr-2" />
-                        Anterior
-                      </Button>
-                      <div className="flex items-center gap-2 text-white px-4">
-                        <span className="text-sm">Página {currentPage}</span>
-                        {totalResults > 0 && (
-                          <span className="text-xs text-gray-400 hidden md:inline">
-                            ({totalResults.toLocaleString()} resultados)
+                        {video.duration && (
+                          <span className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-xs px-1.5 py-0.5 rounded-md font-mono">
+                            {fmt(video.duration)}
                           </span>
                         )}
                       </div>
-                      <Button
-                        variant="outline"
-                        onClick={goToNextPage}
-                        disabled={!nextPageToken || loading}
-                        className="bg-white/10 border-white/20 text-white hover:bg-white/20"
+                      <div className="p-3">
+                        <h4 className="text-white text-xs font-medium line-clamp-2 leading-snug mb-1">{video.title}</h4>
+                        <p className="text-zinc-500 text-xs line-clamp-1">{video.channelTitle}</p>
+                        <div className="flex items-center justify-between mt-2.5">
+                          {video.viewCount ? (
+                            <span className="text-zinc-600 text-xs flex items-center gap-1">
+                              <Eye className="w-3 h-3" />{fmtViews(video.viewCount)}
+                            </span>
+                          ) : <span />}
+                          <div className="flex items-center gap-0.5">
+                            <button onClick={() => playVideo(video)} className="p-1 rounded-lg hover:bg-zinc-800 transition-colors">
+                              <Play className="w-3.5 h-3.5 text-zinc-400 hover:text-white" />
+                            </button>
+                            <button onClick={() => handleAddToPlaylist(video)} className="p-1 rounded-lg hover:bg-zinc-800 transition-colors">
+                              <Plus className="w-3.5 h-3.5 text-zinc-400 hover:text-white" />
+                            </button>
+                            <div>
+                              <button
+                                data-download-btn={video.id}
+                                onClick={e => { e.stopPropagation(); setDownloadMenuFor(downloadMenuFor === video.id ? null : video.id) }}
+                                className="p-1 rounded-lg hover:bg-zinc-800 transition-colors"
+                              >
+                                <Download className="w-3.5 h-3.5 text-zinc-400 hover:text-white" />
+                              </button>
+                              <AnimatePresence>
+                                {downloadMenuFor === video.id && (
+                                  <DownloadDropdown videoId={video.id} onDownload={handleDownload} onClose={() => setDownloadMenuFor(null)} />
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                </motion.div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Playlist */}
+          <div className="xl:sticky xl:top-24 xl:h-[calc(100vh-6rem)] xl:overflow-y-auto">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ListMusic className="w-4 h-4 text-zinc-400" />
+                  <span className="font-semibold text-sm">Playlist</span>
+                </div>
+                <span className="text-zinc-500 text-xs">{playlist.length} video{playlist.length !== 1 ? "s" : ""}</span>
+              </div>
+
+              {playlist.length === 0 ? (
+                <div className="px-5 py-10 text-center">
+                  <ListMusic className="w-8 h-8 text-zinc-700 mx-auto mb-2" />
+                  <p className="text-zinc-500 text-sm">Playlist vacía</p>
+                  <p className="text-zinc-700 text-xs mt-1">Agrega videos con el botón +</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-zinc-800">
+                  <AnimatePresence>
+                    {playlist.map((video, index) => (
+                      <motion.div
+                        key={video.id}
+                        initial={{ opacity: 0, x: 16 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -16 }}
+                        transition={{ duration: 0.2 }}
+                        onClick={() => playVideo(video, true, index)}
+                        className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-zinc-800/60 transition-colors group ${currentPlaylistIndex === index ? "bg-zinc-800 border-l-2 border-green-500" : ""}`}
                       >
-                        Siguiente
-                        <ChevronRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
+                        <div className="relative flex-shrink-0">
+                          <img src={video.thumbnail} alt={video.title} className="w-14 h-10 object-cover rounded-lg" />
+                          {currentPlaylistIndex === index && (
+                            <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
+                              <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-xs font-medium line-clamp-2 leading-snug ${currentPlaylistIndex === index ? "text-white" : "text-zinc-300"}`}>
+                            {video.title}
+                          </p>
+                          <p className="text-zinc-600 text-xs mt-0.5 line-clamp-1">{video.channelTitle}</p>
+                        </div>
+                        <button
+                          onClick={e => { e.stopPropagation(); handleRemoveFromPlaylist(video.id) }}
+                          className="opacity-0 group-hover:opacity-100 p-1 rounded-lg hover:bg-zinc-700 transition-all flex-shrink-0"
+                        >
+                          <X className="w-3.5 h-3.5 text-zinc-400" />
+                        </button>
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )

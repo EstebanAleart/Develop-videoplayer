@@ -25,3 +25,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# YouTube OAuth tokens
+.youtube-tokens.json
+*-player-script.js
