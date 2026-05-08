@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 
-const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY
+const API_KEYS = [
+  process.env.YOUTUBE_API_KEY,
+  process.env.YOUTUBE_API_KEY_BACKUP,
+].filter(Boolean) as string[]
 
 // Almacenamiento temporal en memoria (en producción usarías una base de datos)
 let suggestions: any[] = []
@@ -59,16 +62,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Este video ya fue sugerido" }, { status: 400 })
     }
 
-    // Obtener detalles del video desde YouTube API
-    const response = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id=${videoId}&key=${YOUTUBE_API_KEY}`,
-    )
-
-    if (!response.ok) {
-      throw new Error("Failed to fetch video details")
+    // Obtener detalles del video desde YouTube API (con fallback de keys)
+    let data: any = null
+    for (const key of API_KEYS) {
+      const response = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,statistics&id=${videoId}&key=${key}`,
+      )
+      if (response.ok) {
+        data = await response.json()
+        break
+      }
     }
 
-    const data = await response.json()
+    if (!data) throw new Error("Failed to fetch video details")
 
     if (!data.items || data.items.length === 0) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 })
